@@ -1,0 +1,1449 @@
+openapi: 3.0.3
+info:
+  title: Real Estate Project Management API
+  description: API for managing real estate projects, owners, houses, and buildings with strict business rules
+  version: 1.0.0
+  contact:
+    name: Project Management System
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8081/api
+    description: Development server
+
+paths:
+  # Projects endpoints
+  /projects:
+    get:
+      summary: List all projects
+      description: Retrieve a list of projects with optional filtering
+      parameters:
+        - name: type
+          in: query
+          description: Filter by project type
+          schema:
+            type: string
+            enum: [Colony, IndependentHouse, LinkHouse, HousingEstate]
+        - name: city
+          in: query
+          description: Filter by city
+          schema:
+            type: string
+        - name: owner_id
+          in: query
+          description: Filter by owner ID
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: Maximum number of projects to return
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of projects to skip
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+    post:
+      summary: Create a new project
+      description: Create a new project with optional initial owners
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Business rule violation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /projects/{project_id}:
+    get:
+      summary: Get project details
+      description: Retrieve detailed information about a specific project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetail'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update project
+      description: Update project information
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Validation error
+        '404':
+          description: Project not found
+
+    delete:
+      summary: Delete project
+      description: Delete a project and all associated data
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Project deleted successfully
+        '404':
+          description: Project not found
+        '409':
+          description: Cannot delete project (business rule violation)
+
+  # Project Owners endpoints
+  /projects/{project_id}/owners:
+    get:
+      summary: Get project owners
+      description: Retrieve all owners of a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of project owners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectOwner'
+        '404':
+          description: Project not found
+
+    post:
+      summary: Add owner to project
+      description: Assign an owner to a project with percentage and role
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddProjectOwnerRequest'
+      responses:
+        '201':
+          description: Owner added to project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOwner'
+        '400':
+          description: Validation error
+        '404':
+          description: Project or owner not found
+        '409':
+          description: Business rule violation (too many owners, percentage sum not 100)
+
+  /projects/{project_id}/owners/{owner_id}:
+    put:
+      summary: Update project owner
+      description: Update owner percentage and role in project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectOwnerRequest'
+      responses:
+        '200':
+          description: Owner updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOwner'
+        '400':
+          description: Validation error
+        '404':
+          description: Project or owner not found
+        '409':
+          description: Business rule violation
+
+    delete:
+      summary: Remove owner from project
+      description: Remove an owner from a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Owner removed successfully
+        '404':
+          description: Project or owner not found
+        '409':
+          description: Cannot remove owner (project must have at least one owner)
+
+  # Owners endpoints
+  /owners:
+    get:
+      summary: List all owners
+      description: Retrieve a list of all owners
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of owners to return
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of owners to skip
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of owners
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  owners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Owner'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+    post:
+      summary: Create a new owner
+      description: Create a new owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOwnerRequest'
+      responses:
+        '201':
+          description: Owner created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Owner'
+        '400':
+          description: Validation error
+
+  /owners/{owner_id}:
+    get:
+      summary: Get owner details
+      description: Retrieve detailed information about a specific owner
+      parameters:
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Owner details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerDetail'
+        '404':
+          description: Owner not found
+
+    put:
+      summary: Update owner
+      description: Update owner information
+      parameters:
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOwnerRequest'
+      responses:
+        '200':
+          description: Owner updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Owner'
+        '400':
+          description: Validation error
+        '404':
+          description: Owner not found
+
+    delete:
+      summary: Delete owner
+      description: Delete an owner
+      parameters:
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Owner deleted successfully
+        '404':
+          description: Owner not found
+        '409':
+          description: Cannot delete owner (has active project/house ownerships)
+
+  # Houses endpoints
+  /projects/{project_id}/houses:
+    get:
+      summary: Get project houses
+      description: Retrieve all houses in a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+        - name: building_id
+          in: query
+          description: Filter by building ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of houses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/House'
+        '404':
+          description: Project not found
+
+    post:
+      summary: Create a new house
+      description: Create a new house in a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHouseRequest'
+      responses:
+        '201':
+          description: House created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/House'
+        '400':
+          description: Validation error
+        '404':
+          description: Project or building not found
+
+  /houses/{house_id}:
+    get:
+      summary: Get house details
+      description: Retrieve detailed information about a specific house
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: House details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HouseDetail'
+        '404':
+          description: House not found
+
+    put:
+      summary: Update house
+      description: Update house information
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHouseRequest'
+      responses:
+        '200':
+          description: House updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/House'
+        '400':
+          description: Validation error
+        '404':
+          description: House not found
+
+    delete:
+      summary: Delete house
+      description: Delete a house
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: House deleted successfully
+        '404':
+          description: House not found
+
+  # House Owners endpoints
+  /houses/{house_id}/owners:
+    get:
+      summary: Get house owners
+      description: Retrieve all owners of a house
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of house owners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HouseOwner'
+        '404':
+          description: House not found
+
+    post:
+      summary: Add owner to house
+      description: Assign an owner to a house with percentage and role
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddHouseOwnerRequest'
+      responses:
+        '201':
+          description: Owner added to house
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HouseOwner'
+        '400':
+          description: Validation error
+        '404':
+          description: House or owner not found
+        '409':
+          description: Business rule violation (percentage sum not 100)
+
+  /houses/{house_id}/owners/{owner_id}:
+    put:
+      summary: Update house owner
+      description: Update owner percentage and role in house
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHouseOwnerRequest'
+      responses:
+        '200':
+          description: Owner updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HouseOwner'
+        '400':
+          description: Validation error
+        '404':
+          description: House or owner not found
+        '409':
+          description: Business rule violation
+
+    delete:
+      summary: Remove owner from house
+      description: Remove an owner from a house
+      parameters:
+        - name: house_id
+          in: path
+          required: true
+          description: House UUID
+          schema:
+            type: string
+            format: uuid
+        - name: owner_id
+          in: path
+          required: true
+          description: Owner UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Owner removed successfully
+        '404':
+          description: House or owner not found
+        '409':
+          description: Cannot remove owner (house must have at least one owner)
+
+  # Apartment Buildings endpoints
+  /projects/{project_id}/buildings:
+    get:
+      summary: Get project buildings
+      description: Retrieve all apartment buildings in a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of buildings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApartmentBuilding'
+        '404':
+          description: Project not found
+
+    post:
+      summary: Create a new building
+      description: Create a new apartment building in a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBuildingRequest'
+      responses:
+        '201':
+          description: Building created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApartmentBuilding'
+        '400':
+          description: Validation error
+        '404':
+          description: Project not found
+
+  /buildings/{building_id}:
+    get:
+      summary: Get building details
+      description: Retrieve detailed information about a specific building
+      parameters:
+        - name: building_id
+          in: path
+          required: true
+          description: Building UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Building details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildingDetail'
+        '404':
+          description: Building not found
+
+    put:
+      summary: Update building
+      description: Update building information
+      parameters:
+        - name: building_id
+          in: path
+          required: true
+          description: Building UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBuildingRequest'
+      responses:
+        '200':
+          description: Building updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApartmentBuilding'
+        '400':
+          description: Validation error
+        '404':
+          description: Building not found
+
+    delete:
+      summary: Delete building
+      description: Delete a building
+      parameters:
+        - name: building_id
+          in: path
+          required: true
+          description: Building UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Building deleted successfully
+        '404':
+          description: Building not found
+
+  # Project Users endpoints
+  /projects/{project_id}/users:
+    get:
+      summary: Get project users
+      description: Retrieve all users assigned to a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+        - name: role
+          in: query
+          description: Filter by role
+          schema:
+            type: string
+            enum: [superuser, sysadmin, localadmin, admin, subadmin, user, guest]
+      responses:
+        '200':
+          description: List of project users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectUser'
+        '404':
+          description: Project not found
+
+    post:
+      summary: Add user to project
+      description: Assign a user to a project with a specific role
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddProjectUserRequest'
+      responses:
+        '201':
+          description: User added to project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUser'
+        '400':
+          description: Validation error
+        '404':
+          description: Project not found
+        '409':
+          description: Business rule violation (role count limits exceeded)
+
+  /projects/{project_id}/users/{user_id}:
+    put:
+      summary: Update project user
+      description: Update user role in project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+        - name: user_id
+          in: path
+          required: true
+          description: User UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUser'
+        '400':
+          description: Validation error
+        '404':
+          description: Project or user not found
+        '409':
+          description: Business rule violation
+
+    delete:
+      summary: Remove user from project
+      description: Remove a user from a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: Project UUID
+          schema:
+            type: string
+            format: uuid
+        - name: user_id
+          in: path
+          required: true
+          description: User UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: User removed successfully
+        '404':
+          description: Project or user not found
+
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [Colony, IndependentHouse, LinkHouse, HousingEstate]
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProjectDetail:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+        - type: object
+          properties:
+            owners:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProjectOwner'
+            buildings:
+              type: array
+              items:
+                $ref: '#/components/schemas/ApartmentBuilding'
+            houses:
+              type: array
+              items:
+                $ref: '#/components/schemas/House'
+            user_counts:
+              type: object
+              properties:
+                admin:
+                  type: integer
+                subadmin:
+                  type: integer
+                user:
+                  type: integer
+
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+        - type
+        - address
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [Colony, IndependentHouse, LinkHouse, HousingEstate]
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        metadata:
+          type: object
+        owners:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectOwnerInput'
+          maxItems: 10
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        metadata:
+          type: object
+
+    ProjectOwner:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+        owner:
+          $ref: '#/components/schemas/Owner'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProjectOwnerInput:
+      type: object
+      required:
+        - owner_id
+        - percentage
+      properties:
+        owner_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+          default: co-owner
+
+    AddProjectOwnerRequest:
+      type: object
+      required:
+        - owner_id
+        - percentage
+      properties:
+        owner_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+          default: co-owner
+
+    UpdateProjectOwnerRequest:
+      type: object
+      properties:
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+
+    Owner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OwnerDetail:
+      allOf:
+        - $ref: '#/components/schemas/Owner'
+        - type: object
+          properties:
+            projects:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProjectOwner'
+            houses:
+              type: array
+              items:
+                $ref: '#/components/schemas/HouseOwner'
+
+    CreateOwnerRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        metadata:
+          type: object
+
+    UpdateOwnerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        metadata:
+          type: object
+
+    House:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        building_id:
+          type: string
+          format: uuid
+          nullable: true
+        unit_number:
+          type: string
+        name:
+          type: string
+        category_type:
+          type: string
+        size_sqm:
+          type: number
+          format: decimal
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    HouseDetail:
+      allOf:
+        - $ref: '#/components/schemas/House'
+        - type: object
+          properties:
+            owners:
+              type: array
+              items:
+                $ref: '#/components/schemas/HouseOwner'
+            building:
+              $ref: '#/components/schemas/ApartmentBuilding'
+
+    CreateHouseRequest:
+      type: object
+      required:
+        - name
+      properties:
+        building_id:
+          type: string
+          format: uuid
+        unit_number:
+          type: string
+        name:
+          type: string
+        category_type:
+          type: string
+        size_sqm:
+          type: number
+          format: decimal
+        metadata:
+          type: object
+        owners:
+          type: array
+          items:
+            $ref: '#/components/schemas/HouseOwnerInput'
+
+    UpdateHouseRequest:
+      type: object
+      properties:
+        unit_number:
+          type: string
+        name:
+          type: string
+        category_type:
+          type: string
+        size_sqm:
+          type: number
+          format: decimal
+        metadata:
+          type: object
+
+    HouseOwner:
+      type: object
+      properties:
+        house_id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+        owner:
+          $ref: '#/components/schemas/Owner'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    HouseOwnerInput:
+      type: object
+      required:
+        - owner_id
+        - percentage
+      properties:
+        owner_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+          default: co-owner
+
+    AddHouseOwnerRequest:
+      type: object
+      required:
+        - owner_id
+        - percentage
+      properties:
+        owner_id:
+          type: string
+          format: uuid
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+          default: co-owner
+
+    UpdateHouseOwnerRequest:
+      type: object
+      properties:
+        percentage:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 100
+        role:
+          type: string
+          enum: [primary, co-owner]
+
+    ApartmentBuilding:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: string
+        floors:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BuildingDetail:
+      allOf:
+        - $ref: '#/components/schemas/ApartmentBuilding'
+        - type: object
+          properties:
+            houses:
+              type: array
+              items:
+                $ref: '#/components/schemas/House'
+
+    CreateBuildingRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        floors:
+          type: integer
+          minimum: 1
+
+    UpdateBuildingRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        floors:
+          type: integer
+          minimum: 1
+
+    ProjectUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [superuser, sysadmin, localadmin, admin, subadmin, user, guest]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AddProjectUserRequest:
+      type: object
+      required:
+        - username
+        - role
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [superuser, sysadmin, localadmin, admin, subadmin, user, guest]
+
+    UpdateProjectUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [superuser, sysadmin, localadmin, admin, subadmin, user, guest]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object

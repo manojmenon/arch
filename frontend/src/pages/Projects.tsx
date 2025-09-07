@@ -1,21 +1,18 @@
-import { useState } from 'react';
+import { FC } from 'react';
 import { Link } from 'react-router-dom';
 import { useProjects, useDeleteProject } from '../hooks/useProjects';
 import { useAuthStore } from '../store/authStore';
+import { useOrganizationStore } from '../store/organizationStore';
 import { Project } from '../types';
-import { Plus, Edit, Trash2, Eye, Search, Folder, MapPin, DollarSign, Calendar, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { OrganizationSelector } from '../components/OrganizationSelector';
+import { ProjectFilters } from '../components/ProjectFilters';
+import { Plus, Edit, Trash2, Eye, Folder, MapPin, DollarSign, Calendar, Clock, CheckCircle, AlertCircle, Building2 } from 'lucide-react';
 
-const Projects = () => {
-  const { data: projects, isLoading } = useProjects();
+const Projects: FC = () => {
+  const { filters } = useOrganizationStore();
+  const { data: projects, isLoading } = useProjects(filters);
   const { hasRole } = useAuthStore();
   const deleteProjectMutation = useDeleteProject();
-  const [searchTerm, setSearchTerm] = useState('');
-
-  const filteredProjects = projects?.filter(project =>
-    project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.owner_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this project?')) {
@@ -56,32 +53,34 @@ const Projects = () => {
         <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-white bg-opacity-5 rounded-full"></div>
       </div>
 
-      {/* Search and Stats */}
+      {/* Filters and Organization Selector */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-1">
+          <OrganizationSelector />
+        </div>
+        <div className="lg:col-span-3">
+          <ProjectFilters />
+        </div>
+      </div>
+
+      {/* Stats */}
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search projects by name, location, or owner..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors duration-200 bg-gray-50 focus:bg-white"
-            />
+        <div className="flex items-center space-x-6 text-sm text-gray-600">
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+            <span>Active: {projects?.filter(p => p.status === 'active').length || 0}</span>
           </div>
-          <div className="flex items-center space-x-6 text-sm text-gray-600">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
-              <span>Active: {projects?.filter(p => p.status === 'active').length || 0}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-              <span>Completed: {projects?.filter(p => p.status === 'completed').length || 0}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
-              <span>Planning: {projects?.filter(p => p.status === 'planning').length || 0}</span>
-            </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+            <span>Completed: {projects?.filter(p => p.status === 'completed').length || 0}</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
+            <span>Planning: {projects?.filter(p => p.status === 'planning').length || 0}</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+            <span>Total: {projects?.length || 0}</span>
           </div>
         </div>
       </div>
@@ -107,16 +106,16 @@ const Projects = () => {
             </div>
           ))}
         </div>
-      ) : filteredProjects.length === 0 ? (
+      ) : projects?.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Folder className="w-10 h-10 text-gray-400" />
           </div>
           <h3 className="text-xl font-semibold text-gray-900 mb-2">No projects found</h3>
           <p className="text-gray-500 mb-6">
-            {searchTerm ? 'No projects match your search criteria.' : 'Get started by creating your first project.'}
+            No projects match your current filters. Try adjusting your search criteria or organization selection.
           </p>
-          {canEdit && !searchTerm && (
+          {canEdit && (
             <Link 
               to="/projects/new" 
               className="inline-flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -128,7 +127,7 @@ const Projects = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredProjects.map((project, index) => (
+          {projects?.map((project, index) => (
             <ProjectCard
               key={project.id}
               project={project}
@@ -201,6 +200,22 @@ const ProjectCard = ({ project, canEdit, canDelete, onDelete, index }: ProjectCa
         </div>
 
         <div className="space-y-3">
+          {/* Organization */}
+          {(project as any).organization_name && (
+            <div className="flex items-center text-sm text-gray-600">
+              <Building2 className="w-4 h-4 mr-2 text-gray-400" />
+              <span>{(project as any).organization_name}</span>
+            </div>
+          )}
+          
+          {/* Category */}
+          {(project as any).category_name && (
+            <div className="flex items-center text-sm text-gray-600">
+              <Folder className="w-4 h-4 mr-2 text-gray-400" />
+              <span>{(project as any).category_name}</span>
+            </div>
+          )}
+          
           {project.city && project.state && (
             <div className="flex items-center text-sm text-gray-600">
               <MapPin className="w-4 h-4 mr-2 text-gray-400" />
@@ -222,6 +237,21 @@ const ProjectCard = ({ project, canEdit, canDelete, onDelete, index }: ProjectCa
             </div>
           )}
         </div>
+
+        {/* Tags */}
+        {(project as any).tag_names && (project as any).tag_names.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1">
+            {(project as any).tag_names.map((tagName: string, index: number) => (
+              <span
+                key={index}
+                className="px-2 py-1 text-xs font-medium text-white rounded-full"
+                style={{ backgroundColor: (project as any).tag_colors?.[index] || '#6B7280' }}
+              >
+                {tagName}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="mt-6 flex items-center justify-between">
           <Link

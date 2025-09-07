@@ -411,26 +411,222 @@ app.delete('/api/auth/tokens/:id', verifyToken, async (req, res) => {
   }
 });
 
-// Projects endpoints
-app.get('/api/projects', async (req, res) => {
+// Organizations endpoints
+app.get('/api/organizations', verifyToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT id, name, address, city, state, status, budget, start_date, end_date, created_at, updated_at FROM projects ORDER BY created_at DESC'
-    );
+    const { search, type, limit = 50, offset = 0 } = req.query;
+    let query = `
+      SELECT o.*, 
+             COUNT(DISTINCT p.id) as project_count,
+             COUNT(DISTINCT ou.user_id) as user_count
+      FROM organizations o
+      LEFT JOIN projects p ON o.id = p.organization_id AND p.deleted_at IS NULL
+      LEFT JOIN organization_users ou ON o.id = ou.organization_id AND ou.deleted_at IS NULL
+      WHERE o.deleted_at IS NULL
+    `;
+    const params = [];
+    let paramCount = 0;
+
+    if (search) {
+      paramCount++;
+      query += ` AND (o.name ILIKE $${paramCount} OR o.description ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
+    }
+
+    if (type) {
+      paramCount++;
+      query += ` AND o.type = $${paramCount}`;
+      params.push(type);
+    }
+
+    query += ` GROUP BY o.id ORDER BY o.name LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
-    console.error('Get projects error:', error);
+    console.error('Error fetching organizations:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.get('/api/projects/:id', async (req, res) => {
+app.get('/api/organizations/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query(
-      'SELECT * FROM projects WHERE id = $1',
-      [id]
-    );
+    const result = await pool.query(`
+      SELECT o.*, 
+             COUNT(DISTINCT p.id) as project_count,
+             COUNT(DISTINCT ou.user_id) as user_count
+      FROM organizations o
+      LEFT JOIN projects p ON o.id = p.organization_id AND p.deleted_at IS NULL
+      LEFT JOIN organization_users ou ON o.id = ou.organization_id AND ou.deleted_at IS NULL
+      WHERE o.id = $1 AND o.deleted_at IS NULL
+      GROUP BY o.id
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching organization:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Projects endpoints with enhanced filtering
+app.get('/api/projects', verifyToken, async (req, res) => {
+  try {
+    const { 
+      organization_id, 
+      category_id, 
+      status, 
+      priority, 
+      search, 
+      tags,
+      limit = 50, 
+      offset = 0 
+    } = req.query;
+    
+    let query = `
+      SELECT p.*, 
+             o.name as organization_name,
+             pc.name as category_name,
+             pc.color as category_color,
+             pc.icon as category_icon,
+             COUNT(DISTINCT po.owner_id) as owner_count,
+             COUNT(DISTINCT h.id) as house_count,
+             array_agg(DISTINCT pt.name) as tag_names,
+             array_agg(DISTINCT pt.color) as tag_colors
+      FROM projects p
+      LEFT JOIN organizations o ON p.organization_id = o.id
+      LEFT JOIN project_categories pc ON p.category_id = pc.id
+      LEFT JOIN project_owners po ON p.id = po.project_id
+      LEFT JOIN houses h ON p.id = h.project_id
+      LEFT JOIN project_tag_assignments pta ON p.id = pta.project_id
+      LEFT JOIN project_tags pt ON pta.tag_id = pt.id
+      WHERE p.deleted_at IS NULL
+    `;
+    
+    const params = [];
+    let paramCount = 0;
+
+    if (organization_id) {
+      paramCount++;
+      query += ` AND p.organization_id = $${paramCount}`;
+      params.push(organization_id);
+    }
+
+    if (category_id) {
+      paramCount++;
+      query += ` AND p.category_id = $${paramCount}`;
+      params.push(category_id);
+    }
+
+    if (status) {
+      paramCount++;
+      query += ` AND p.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    if (priority) {
+      paramCount++;
+      query += ` AND p.priority = $${paramCount}`;
+      params.push(priority);
+    }
+
+    if (search) {
+      paramCount++;
+      query += ` AND (p.name ILIKE $${paramCount} OR p.address ILIKE $${paramCount} OR o.name ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
+    }
+
+    if (tags) {
+      const tagArray = tags.split(',');
+      paramCount++;
+      query += ` AND p.id IN (
+        SELECT pta2.project_id FROM project_tag_assignments pta2 
+        JOIN project_tags pt2 ON pta2.tag_id = pt2.id 
+        WHERE pt2.name = ANY($${paramCount})
+      )`;
+      params.push(tagArray);
+    }
+
+    query += ` GROUP BY p.id, o.name, pc.name, pc.color, pc.icon 
+               ORDER BY p.created_at DESC 
+               LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Categories endpoints
+app.get('/api/categories', verifyToken, async (req, res) => {
+  try {
+    const { organization_id } = req.query;
+    let query = 'SELECT * FROM project_categories WHERE deleted_at IS NULL';
+    const params = [];
+    
+    if (organization_id) {
+      query += ' AND organization_id = $1';
+      params.push(organization_id);
+    }
+    
+    query += ' ORDER BY name';
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Tags endpoints
+app.get('/api/tags', verifyToken, async (req, res) => {
+  try {
+    const { organization_id } = req.query;
+    let query = 'SELECT * FROM project_tags WHERE deleted_at IS NULL';
+    const params = [];
+    
+    if (organization_id) {
+      query += ' AND organization_id = $1';
+      params.push(organization_id);
+    }
+    
+    query += ' ORDER BY name';
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching tags:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/projects/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(`
+      SELECT p.*, 
+             o.name as organization_name,
+             pc.name as category_name,
+             pc.color as category_color,
+             pc.icon as category_icon,
+             array_agg(DISTINCT pt.name) as tag_names,
+             array_agg(DISTINCT pt.color) as tag_colors
+      FROM projects p
+      LEFT JOIN organizations o ON p.organization_id = o.id
+      LEFT JOIN project_categories pc ON p.category_id = pc.id
+      LEFT JOIN project_tag_assignments pta ON p.id = pta.project_id
+      LEFT JOIN project_tags pt ON pta.tag_id = pt.id
+      WHERE p.id = $1 AND p.deleted_at IS NULL
+      GROUP BY p.id, o.name, pc.name, pc.color, pc.icon
+    `, [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found' });

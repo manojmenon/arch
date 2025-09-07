@@ -1,12 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { apiClient } from '../utils/api';
 import { Project } from '../types';
+import { ProjectFilters } from '../store/organizationStore';
 
-export const useProjects = () => {
+export const useProjects = (filters?: ProjectFilters) => {
   return useQuery<Project[]>(
-    ['projects'],
+    ['projects', filters],
     async () => {
-      const response = await apiClient.get<Project[]>('/api/projects');
+      const params = new URLSearchParams();
+      if (filters) {
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            if (Array.isArray(value)) {
+              params.append(key, value.join(','));
+            } else {
+              params.append(key, value.toString());
+            }
+          }
+        });
+      }
+      
+      const response = await apiClient.get<Project[]>(`/api/projects?${params.toString()}`);
       return response;
     }
   );

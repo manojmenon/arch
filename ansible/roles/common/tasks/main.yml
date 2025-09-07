@@ -1,0 +1,79 @@
+---
+# Common system setup tasks
+
+- name: Install essential packages
+  apt:
+    name:
+      - curl
+      - wget
+      - git
+      - unzip
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - htop
+      - vim
+      - ufw
+    state: present
+    update_cache: yes
+
+- name: Create application user
+  user:
+    name: "{{ app_name }}"
+    system: yes
+    shell: /bin/bash
+    home: "/opt/{{ app_name }}"
+    create_home: yes
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_name }}"
+    group: "{{ app_name }}"
+    mode: '0755'
+  loop:
+    - "/opt/{{ app_name }}"
+    - "/opt/{{ app_name }}/data"
+    - "/opt/{{ app_name }}/logs"
+    - "/opt/{{ app_name }}/config"
+
+- name: Configure firewall
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "22"    # SSH
+    - "80"    # HTTP
+    - "443"   # HTTPS
+    - "3000"  # Frontend
+    - "8080"  # Backend API
+    - "12000" # Hubble UI
+
+- name: Enable firewall
+  ufw:
+    state: enabled
+    policy: deny
+
+- name: Set timezone
+  timezone:
+    name: UTC
+
+- name: Configure logrotate for application logs
+  copy:
+    content: |
+      /opt/{{ app_name }}/logs/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          delaycompress
+          notifempty
+          create 644 {{ app_name }} {{ app_name }}
+      }
+    dest: "/etc/logrotate.d/{{ app_name }}"
+    mode: '0644'
+

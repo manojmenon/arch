@@ -1,0 +1,29 @@
+# Example inventory file for Ansible deployment
+# Copy this file to hosts.ini and update with your actual server details
+
+[project_servers]
+# Replace with your actual server IP or hostname
+project-server-01 ansible_host=192.168.1.100 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+[project_servers:vars]
+# Common variables for all servers
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+# Application variables
+app_name=project-management
+app_version=1.0.0
+docker_registry=localhost:5000
+
+# Database variables
+db_name=project_management
+db_user=postgres
+# db_password should be set in ansible vault
+
+# JWT secret (should be set in ansible vault)
+# jwt_secret=your-secret-key-change-in-production
+
+# OpenTelemetry
+otel_enabled=true
+otel_endpoint=http://localhost:4318/v1/traces
+

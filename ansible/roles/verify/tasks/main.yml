@@ -1,0 +1,133 @@
+---
+# Verification and health check tasks
+
+- name: Check pod status
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: project-management
+  register: pods
+  become_user: "{{ app_name }}"
+
+- name: Display pod status
+  debug:
+    msg: "Pod {{ item.metadata.name }} is {{ item.status.phase }}"
+  loop: "{{ pods.resources }}"
+
+- name: Check service status
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: project-management
+  register: services
+  become_user: "{{ app_name }}"
+
+- name: Display service status
+  debug:
+    msg: "Service {{ item.metadata.name }} is running on {{ item.spec.clusterIP }}"
+  loop: "{{ services.resources }}"
+
+- name: Test backend health endpoint
+  uri:
+    url: "http://localhost:8080/health"
+    method: GET
+    status_code: 200
+  retries: 5
+  delay: 10
+
+- name: Test frontend endpoint
+  uri:
+    url: "http://localhost:3000"
+    method: GET
+    status_code: 200
+  retries: 5
+  delay: 10
+
+- name: Test API endpoint
+  uri:
+    url: "http://localhost:8080/api/auth/me"
+    method: GET
+    status_code: 401  # Should return 401 without auth
+  retries: 3
+  delay: 5
+
+- name: Run smoke tests
+  shell: |
+    # Test login endpoint
+    curl -X POST http://localhost:8080/api/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"username":"admin","password":"admin123"}' \
+      -w "Login test: %{http_code}\n" -s -o /dev/null
+    
+    # Test projects endpoint (should require auth)
+    curl -X GET http://localhost:8080/api/projects \
+      -w "Projects test: %{http_code}\n" -s -o /dev/null
+  register: smoke_test_results
+  become_user: "{{ app_name }}"
+
+- name: Display smoke test results
+  debug:
+    msg: "{{ smoke_test_results.stdout_lines }}"
+
+- name: Check Cilium status
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - k8s-app=cilium
+  register: cilium_pods
+  become_user: "{{ app_name }}"
+
+- name: Display Cilium status
+  debug:
+    msg: "Cilium pod {{ item.metadata.name }} is {{ item.status.phase }}"
+  loop: "{{ cilium_pods.resources }}"
+
+- name: Check Hubble UI
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: kube-system
+    name: hubble-ui
+  register: hubble_service
+  become_user: "{{ app_name }}"
+
+- name: Display Hubble UI status
+  debug:
+    msg: "Hubble UI is available at http://{{ ansible_host }}:12000"
+
+- name: Generate deployment report
+  copy:
+    content: |
+      Project Management System Deployment Report
+      ==========================================
+      
+      Deployment Date: {{ ansible_date_time.iso8601 }}
+      Server: {{ ansible_host }}
+      Application Version: {{ app_version }}
+      
+      Services:
+      - Frontend: http://{{ ansible_host }}:3000
+      - Backend API: http://{{ ansible_host }}:8080
+      - API Documentation: http://{{ ansible_host }}:8080/swagger/index.html
+      - Hubble UI: http://{{ ansible_host }}:12000
+      
+      Default Credentials:
+      - Username: admin
+      - Password: admin123
+      
+      Pod Status:
+      {% for pod in pods.resources %}
+      - {{ pod.metadata.name }}: {{ pod.status.phase }}
+      {% endfor %}
+      
+      Service Status:
+      {% for service in services.resources %}
+      - {{ service.metadata.name }}: {{ service.spec.clusterIP }}
+      {% endfor %}
+    dest: "/opt/{{ app_name }}/deployment-report.txt"
+    owner: "{{ app_name }}"
+    group: "{{ app_name }}"
+    mode: '0644'
+

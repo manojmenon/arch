@@ -1,0 +1,31 @@
+---
+# Main deployment playbook for Project Management System
+- name: Deploy Project Management System
+  hosts: project_servers
+  become: yes
+  vars_files:
+    - ../vars/vars.yml
+  roles:
+    - common
+    - docker
+    - kind
+    - cilium
+    - deploy-apps
+    - verify
+
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "Deployment completed successfully!"
+          - "Frontend: http://{{ ansible_host }}:3000"
+          - "Backend API: http://{{ ansible_host }}:8080"
+          - "API Documentation: http://{{ ansible_host }}:8080/swagger/index.html"
+          - "Hubble UI: http://{{ ansible_host }}:12000"
+

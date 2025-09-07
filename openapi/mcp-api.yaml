@@ -1,0 +1,191 @@
+openapi: 3.0.3
+info:
+  title: Project Management System - MCP API
+  description: Management Control Proxy API that aggregates all services
+  version: 1.0.0
+  contact:
+    name: Project Management Team
+    email: support@projectmanagement.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+  - url: https://api.projectmanagement.com
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check the health status of the MCP server and its dependencies
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: "healthy"
+                      auth:
+                        type: string
+                        example: "healthy"
+                      projects:
+                        type: string
+                        example: "healthy"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "unhealthy"
+                  error:
+                    type: string
+                    example: "database connection failed"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+
+  /api/auth/signup:
+    $ref: './auth-api.yaml#/paths/~1auth~1signup'
+
+  /api/auth/login:
+    $ref: './auth-api.yaml#/paths/~1auth~1login'
+
+  /api/auth/logout:
+    $ref: './auth-api.yaml#/paths/~1auth~1logout'
+
+  /api/auth/me:
+    $ref: './auth-api.yaml#/paths/~1auth~1me'
+
+  /api/auth/tokens:
+    get:
+      $ref: './auth-api.yaml#/paths/~1auth~1tokens/get'
+    post:
+      $ref: './auth-api.yaml#/paths/~1auth~1tokens/post'
+
+  /api/auth/tokens/{id}:
+    delete:
+      $ref: './auth-api.yaml#/paths/~1auth~1tokens~1{id}/delete'
+
+  /api/projects:
+    get:
+      $ref: './projects-api.yaml#/paths/~1projects/get'
+    post:
+      $ref: './projects-api.yaml#/paths/~1projects/post'
+
+  /api/projects/{id}:
+    get:
+      $ref: './projects-api.yaml#/paths/~1projects~1{id}/get'
+    put:
+      $ref: './projects-api.yaml#/paths/~1projects~1{id}/put'
+    delete:
+      $ref: './projects-api.yaml#/paths/~1projects~1{id}/delete'
+
+  /api/projects/stats:
+    get:
+      $ref: './projects-api.yaml#/paths/~1projects~1stats/get'
+
+  /swagger/index.html:
+    get:
+      summary: API Documentation
+      description: Swagger UI for API documentation
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: Swagger UI page
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+        version:
+          type: string
+          example: "1.0.0"
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              example: "healthy"
+            auth:
+              type: string
+              example: "healthy"
+            projects:
+              type: string
+              example: "healthy"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Service unavailable"
+        message:
+          type: string
+          example: "Detailed error message"
+        code:
+          type: integer
+          example: 503
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Authentication
+    description: User authentication and authorization
+  - name: API Tokens
+    description: API token management
+  - name: Projects
+    description: Project management operations
+  - name: Documentation
+    description: API documentation and specifications
+

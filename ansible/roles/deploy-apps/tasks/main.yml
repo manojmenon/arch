@@ -1,0 +1,119 @@
+---
+# Application deployment tasks
+
+- name: Copy application files
+  copy:
+    src: "{{ item }}"
+    dest: "/opt/{{ app_name }}/{{ item }}"
+    owner: "{{ app_name }}"
+    group: "{{ app_name }}"
+    mode: '0644'
+  loop:
+    - "infra/k8s/namespace.yaml"
+    - "infra/k8s/configmap.yaml"
+    - "infra/k8s/secret.yaml"
+    - "infra/storage/pv.yaml"
+    - "infra/storage/pvc.yaml"
+    - "infra/k8s/postgres.yaml"
+    - "infra/k8s/backend.yaml"
+    - "infra/k8s/frontend.yaml"
+    - "infra/otel/collector.yaml"
+    - "infra/k8s/ingress.yaml"
+
+- name: Build Docker images
+  docker_image:
+    name: "{{ docker_registry }}/{{ app_name }}-{{ item.name }}"
+    source: build
+    build:
+      path: "{{ item.path }}"
+      dockerfile: "{{ item.dockerfile }}"
+    tag: "{{ app_version }}"
+    push: yes
+  loop:
+    - { name: "backend", path: "/opt/{{ app_name }}/backend", dockerfile: "Dockerfile" }
+    - { name: "frontend", path: "/opt/{{ app_name }}/frontend", dockerfile: "Dockerfile" }
+
+- name: Load images into kind cluster
+  shell: |
+    kind load docker-image {{ docker_registry }}/{{ app_name }}-backend:{{ app_version }} --name kind-hello-01
+    kind load docker-image {{ docker_registry }}/{{ app_name }}-frontend:{{ app_version }} --name kind-hello-01
+  become_user: "{{ app_name }}"
+
+- name: Update image references in manifests
+  replace:
+    path: "/opt/{{ app_name }}/{{ item }}"
+    regexp: "image: {{ item.image_name }}:latest"
+    replace: "image: {{ docker_registry }}/{{ app_name }}-{{ item.image_name }}:{{ app_version }}"
+  loop:
+    - { file: "infra/k8s/backend.yaml", image_name: "backend" }
+    - { file: "infra/k8s/frontend.yaml", image_name: "frontend" }
+
+- name: Apply Kubernetes manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "/opt/{{ app_name }}/{{ item }}"
+  loop:
+    - "infra/k8s/namespace.yaml"
+    - "infra/k8s/configmap.yaml"
+    - "infra/k8s/secret.yaml"
+    - "infra/storage/pv.yaml"
+    - "infra/storage/pvc.yaml"
+    - "infra/k8s/postgres.yaml"
+    - "infra/otel/collector.yaml"
+    - "infra/k8s/backend.yaml"
+    - "infra/k8s/frontend.yaml"
+    - "infra/k8s/ingress.yaml"
+  become_user: "{{ app_name }}"
+
+- name: Wait for PostgreSQL to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    name: postgres
+    namespace: project-management
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  become_user: "{{ app_name }}"
+
+- name: Wait for backend to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: backend
+    namespace: project-management
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  become_user: "{{ app_name }}"
+
+- name: Wait for frontend to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: frontend
+    namespace: project-management
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  become_user: "{{ app_name }}"
+
+- name: Seed database with dummy data
+  kubernetes.core.k8s_exec:
+    namespace: project-management
+    pod: "postgres-0"
+    command: |
+      psql -U postgres -d project_management -c "
+      INSERT INTO users (id, username, email, password, role, created_at, updated_at) VALUES
+      ('550e8400-e29b-41d4-a716-446655440000', 'admin', 'admin@example.com', 'a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456', 'superuser', NOW(), NOW()),
+      ('550e8400-e29b-41d4-a716-446655440001', 'manager', 'manager@example.com', 'a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456', 'localadmin', NOW(), NOW()),
+      ('550e8400-e29b-41d4-a716-446655440002', 'user1', 'user1@example.com', 'a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456', 'user', NOW(), NOW());
+      "
+  become_user: "{{ app_name }}"
+

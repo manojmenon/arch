@@ -1,0 +1,81 @@
+---
+# Cilium CNI installation
+
+- name: Install Helm
+  shell: |
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    creates: /usr/local/bin/helm
+
+- name: Add Cilium Helm repository
+  kubernetes.core.helm_repository:
+    name: cilium
+    repo_url: https://helm.cilium.io/
+  become_user: "{{ app_name }}"
+
+- name: Update Helm repositories
+  kubernetes.core.helm:
+    name: dummy
+    chart_ref: cilium/cilium
+    release_namespace: kube-system
+    state: absent
+  become_user: "{{ app_name }}"
+
+- name: Check if Cilium is already installed
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - k8s-app=cilium
+  register: cilium_pods
+  become_user: "{{ app_name }}"
+
+- name: Install Cilium with Hubble
+  kubernetes.core.helm:
+    name: cilium
+    chart_ref: cilium/cilium
+    release_namespace: kube-system
+    values:
+      hubble:
+        relay:
+          enabled: true
+        ui:
+          enabled: true
+        metrics:
+          enabled: "{dns,drop,tcp,flow,port-distribution,icmp,http}"
+      prometheus:
+        enabled: true
+      operator:
+        prometheus:
+          enabled: true
+      hubble:
+        relay:
+          prometheus:
+            enabled: true
+    state: present
+  when: cilium_pods.resources | length == 0
+  become_user: "{{ app_name }}"
+
+- name: Wait for Cilium to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: kube-system
+    label_selectors:
+      - k8s-app=cilium
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  become_user: "{{ app_name }}"
+
+- name: Set up Hubble UI port forwarding
+  shell: |
+    kubectl port-forward -n kube-system svc/hubble-ui 12000:80 &
+    echo $! > /opt/{{ app_name }}/hubble.pid
+  become_user: "{{ app_name }}"
+  async: 300
+  poll: 0
+

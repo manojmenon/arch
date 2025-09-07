@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+bin/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# Generated environment files (keep templates)
+frontend/.env.*
+backend/.env.*
+scripts/.env.*
+
+# But keep the template files
+!frontend/env.*
+!backend/env.*
+!scripts/env.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Docker
+.dockerignore
+
+# Kubernetes
+*.kubeconfig
+
+# Ansible
+*.retry
+.vault_pass
+
+# Secrets
+secrets/
+*.pem
+*.key
+*.crt
+
+# Temporary files
+tmp/
+temp/
+

@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8081';
 const API_TIMEOUT = parseInt((import.meta as any).env?.VITE_API_TIMEOUT) || 10000;
 
 class ApiClient {

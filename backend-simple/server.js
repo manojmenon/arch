@@ -28,6 +28,91 @@ const pool = new Pool({
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
+// Helper function to check if user can manage project
+const canManageProject = async (userId, projectId, pool) => {
+  // Get user role
+  const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [userId]);
+  if (userResult.rows.length === 0) return false;
+  
+  const userRole = userResult.rows[0].role;
+  
+  // Superuser and localadmin can manage all projects
+  if (['superuser', 'localadmin'].includes(userRole)) {
+    return true;
+  }
+  
+  // For org-admin, check if they have admin access to the project's organization
+  if (userRole === 'org-admin') {
+    const projectResult = await pool.query(`
+      SELECT p.organization_id, ou.role as org_role
+      FROM projects p
+      LEFT JOIN organization_users ou ON p.organization_id = ou.organization_id AND ou.user_id = $1
+      WHERE p.id = $2 AND p.deleted_at IS NULL
+    `, [userId, projectId]);
+    
+    if (projectResult.rows.length === 0) return false;
+    const { organization_id, org_role } = projectResult.rows[0];
+    
+    // If project has no organization, org-admin cannot manage it
+    if (!organization_id) return false;
+    
+    // Check if user has admin role in the organization
+    return org_role === 'admin';
+  }
+  
+  return false;
+};
+
+// Helper function to check if user is localadmin or superuser
+const isAdmin = (userRole) => {
+  return ['superuser', 'localadmin'].includes(userRole);
+};
+
+// Helper function to get effective role (considering inheritance)
+const getEffectiveRole = async (userId, pool) => {
+  const result = await pool.query(`
+    SELECT 
+      u.role as original_role,
+      ri.inherited_role,
+      ri.is_active,
+      ri.expires_at
+    FROM users u
+    LEFT JOIN role_inheritance ri ON u.id = ri.user_id AND ri.is_active = true
+    WHERE u.id = $1
+  `, [userId]);
+  
+  if (result.rows.length === 0) return null;
+  
+  const { original_role, inherited_role, is_active, expires_at } = result.rows[0];
+  
+  // Check if inheritance is expired
+  if (is_active && inherited_role && expires_at && new Date(expires_at) <= new Date()) {
+    // Deactivate expired inheritance
+    await pool.query('UPDATE role_inheritance SET is_active = false WHERE user_id = $1 AND is_active = true', [userId]);
+    return original_role;
+  }
+  
+  return is_active && inherited_role ? inherited_role : original_role;
+};
+
+// Helper function to check if user can inherit a role
+// Users can only inherit roles with LOWER privileges (downgrade)
+const canInheritRole = (originalRole, targetRole) => {
+  const roleHierarchy = {
+    'guest': 1,
+    'user': 2,
+    'localadmin': 3,
+    'sysadmin': 4,
+    'superuser': 5
+  };
+  
+  const originalLevel = roleHierarchy[originalRole] || 0;
+  const targetLevel = roleHierarchy[targetRole] || 0;
+  
+  // Can only inherit roles with lower privilege levels
+  return targetLevel < originalLevel;
+};
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -143,32 +228,96 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    // Find user
+    // Find user with suspension status
     const result = await pool.query(
-      'SELECT id, username, email, password, role FROM users WHERE username = $1',
+      'SELECT id, username, email, password, role, suspended_until, suspension_reason, failed_login_count, last_failed_login FROM users WHERE username = $1',
       [username]
     );
 
     if (result.rows.length === 0) {
+      // Log failed attempt for non-existent user
+      await pool.query(
+        'INSERT INTO login_attempts (user_id, username, ip_address, user_agent, success) VALUES (NULL, $1, $2, $3, FALSE)',
+        [username, clientIP, userAgent]
+      );
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = result.rows[0];
 
+    // Check if account is suspended
+    if (user.suspended_until && new Date(user.suspended_until) > new Date()) {
+      return res.status(423).json({ 
+        error: 'Account is suspended',
+        suspended_until: user.suspended_until,
+        suspension_reason: user.suspension_reason || 'Too many failed login attempts'
+      });
+    }
+
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
+    
     if (!isValidPassword) {
+      // Log failed attempt
+      await pool.query(
+        'INSERT INTO login_attempts (user_id, username, ip_address, user_agent, success) VALUES ($1, $2, $3, $4, FALSE)',
+        [user.id, username, clientIP, userAgent]
+      );
+
+      // Update failed login count
+      const newFailedCount = (user.failed_login_count || 0) + 1;
+      const now = new Date();
+      
+      // Check if we need to suspend the account (5 failed attempts in 1 hour)
+      if (newFailedCount >= 5) {
+        const suspendUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+        
+        await pool.query(
+          'UPDATE users SET failed_login_count = $1, last_failed_login = $2, suspended_until = $3, suspension_reason = $4 WHERE id = $5',
+          [newFailedCount, now, suspendUntil, 'Too many failed login attempts', user.id]
+        );
+
+        return res.status(423).json({ 
+          error: 'Account suspended due to too many failed login attempts',
+          suspended_until: suspendUntil,
+          suspension_reason: 'Too many failed login attempts'
+        });
+      } else {
+        // Update failed login count but don't suspend yet
+        await pool.query(
+          'UPDATE users SET failed_login_count = $1, last_failed_login = $2 WHERE id = $3',
+          [newFailedCount, now, user.id]
+        );
+      }
+
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate JWT token
+    // Successful login - reset failed login count and clear suspension if any
+    await pool.query(
+      'UPDATE users SET failed_login_count = 0, last_failed_login = NULL, suspended_until = NULL, suspension_reason = NULL WHERE id = $1',
+      [user.id]
+    );
+
+    // Log successful attempt
+    await pool.query(
+      'INSERT INTO login_attempts (user_id, username, ip_address, user_agent, success) VALUES ($1, $2, $3, $4, TRUE)',
+      [user.id, username, clientIP, userAgent]
+    );
+
+    // Get effective role (considering inheritance)
+    const effectiveRole = await getEffectiveRole(user.id, pool);
+
+    // Generate JWT token with effective role
     const token = jwt.sign(
-      { userId: user.id, username: user.username, role: user.role },
+      { userId: user.id, username: user.username, role: effectiveRole, originalRole: user.role },
       JWT_SECRET,
       { expiresIn: '4h' }
     );
@@ -179,12 +328,240 @@ app.post('/api/auth/login', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: effectiveRole,
+        originalRole: user.role
       },
       session_token: token
     });
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Unlock suspended account (localadmin only)
+app.post('/api/auth/unlock/:userId', verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserRole = req.user.role;
+
+    // Check if current user is admin
+    if (!isAdmin(currentUserRole)) {
+      return res.status(403).json({ error: 'Access denied. Only administrators can unlock accounts.' });
+    }
+
+    // Check if target user exists
+    const userResult = await pool.query(
+      'SELECT id, username, suspended_until FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if user is actually suspended
+    if (!user.suspended_until || new Date(user.suspended_until) <= new Date()) {
+      return res.status(400).json({ error: 'User is not currently suspended' });
+    }
+
+    // Unlock the account
+    await pool.query(
+      'UPDATE users SET suspended_until = NULL, suspension_reason = NULL, failed_login_count = 0, last_failed_login = NULL WHERE id = $1',
+      [userId]
+    );
+
+    res.json({
+      message: 'Account unlocked successfully',
+      user: {
+        id: user.id,
+        username: user.username
+      }
+    });
+  } catch (error) {
+    console.error('Unlock account error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get suspended accounts (localadmin only)
+app.get('/api/auth/suspended', verifyToken, async (req, res) => {
+  try {
+    const currentUserRole = req.user.role;
+
+    // Check if current user is admin
+    if (!isAdmin(currentUserRole)) {
+      return res.status(403).json({ error: 'Access denied. Only administrators can view suspended accounts.' });
+    }
+
+    // Get all suspended accounts
+    const result = await pool.query(`
+      SELECT 
+        id, username, email, role, 
+        suspended_until, suspension_reason, 
+        failed_login_count, last_failed_login,
+        created_at
+      FROM users 
+      WHERE suspended_until IS NOT NULL AND suspended_until > NOW()
+      ORDER BY suspended_until ASC
+    `);
+
+    res.json({
+      suspended_accounts: result.rows
+    });
+  } catch (error) {
+    console.error('Get suspended accounts error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Switch to inherited role
+app.post('/api/auth/switch-role', verifyToken, async (req, res) => {
+  try {
+    const { target_role, expires_in_hours } = req.body;
+    const userId = req.user.userId;
+    const currentUserRole = req.user.role;
+
+    // Get user's original role
+    const userResult = await pool.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const originalRole = userResult.rows[0].role;
+
+    // Check if user can inherit the target role
+    if (!canInheritRole(originalRole, target_role)) {
+      const roleHierarchy = {
+        'guest': 1,
+        'user': 2,
+        'localadmin': 3,
+        'sysadmin': 4,
+        'superuser': 5
+      };
+      
+      const availableRoles = Object.keys(roleHierarchy)
+        .filter(role => roleHierarchy[role] < roleHierarchy[originalRole])
+        .join(', ');
+      
+      return res.status(403).json({ 
+        error: `Cannot inherit role '${target_role}'. ${originalRole} can only inherit roles with lower privileges: ${availableRoles || 'none'}` 
+      });
+    }
+
+    // Deactivate any existing inheritance
+    await pool.query('UPDATE role_inheritance SET is_active = false WHERE user_id = $1', [userId]);
+
+    // Calculate expiration time
+    let expiresAt = null;
+    if (expires_in_hours && expires_in_hours > 0) {
+      expiresAt = new Date(Date.now() + expires_in_hours * 60 * 60 * 1000);
+    }
+
+    // Create new inheritance
+    const inheritanceResult = await pool.query(`
+      INSERT INTO role_inheritance (user_id, original_role, inherited_role, expires_at)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `, [userId, originalRole, target_role, expiresAt]);
+
+    res.json({
+      message: `Successfully switched to ${target_role} role`,
+      inheritance: {
+        original_role: originalRole,
+        inherited_role: target_role,
+        expires_at: expiresAt,
+        is_active: true
+      }
+    });
+  } catch (error) {
+    console.error('Switch role error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Return to original role
+app.post('/api/auth/return-role', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Deactivate current inheritance
+    const result = await pool.query(`
+      UPDATE role_inheritance 
+      SET is_active = false 
+      WHERE user_id = $1 AND is_active = true
+      RETURNING original_role, inherited_role
+    `, [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'No active role inheritance found' });
+    }
+
+    const { original_role, inherited_role } = result.rows[0];
+
+    res.json({
+      message: `Successfully returned to ${original_role} role`,
+      previous_inheritance: {
+        original_role: original_role,
+        inherited_role: inherited_role
+      }
+    });
+  } catch (error) {
+    console.error('Return role error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get current role status
+app.get('/api/auth/role-status', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const result = await pool.query(`
+      SELECT 
+        u.role as original_role,
+        ri.inherited_role,
+        ri.is_active,
+        ri.expires_at,
+        ri.inherited_at
+      FROM users u
+      LEFT JOIN role_inheritance ri ON u.id = ri.user_id AND ri.is_active = true
+      WHERE u.id = $1
+    `, [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { original_role, inherited_role, is_active, expires_at, inherited_at } = result.rows[0];
+    const effectiveRole = is_active && inherited_role ? inherited_role : original_role;
+
+    res.json({
+      original_role: original_role,
+      effective_role: effectiveRole,
+      is_inheriting: is_active && inherited_role,
+      inheritance: is_active && inherited_role ? {
+        inherited_role: inherited_role,
+        inherited_at: inherited_at,
+        expires_at: expires_at
+      } : null,
+      available_roles: (() => {
+        const roleHierarchy = {
+          'guest': 1,
+          'user': 2,
+          'localadmin': 3,
+          'sysadmin': 4,
+          'superuser': 5
+        };
+        
+        return Object.keys(roleHierarchy)
+          .filter(role => roleHierarchy[role] < roleHierarchy[original_role]);
+      })()
+    });
+  } catch (error) {
+    console.error('Get role status error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -657,31 +1034,6 @@ app.get('/api/user/profile', verifyToken, async (req, res) => {
 });
 
 // Update user profile
-app.put('/api/user/profile', verifyToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { username, email } = req.body;
-    
-    const result = await pool.query(`
-      UPDATE users 
-      SET username = $1, email = $2, updated_at = now()
-      WHERE id = $3
-      RETURNING id, username, email, role, created_at, updated_at
-    `, [username, email, userId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    if (error.code === '23505') { // Unique constraint violation
-      return res.status(400).json({ error: 'Username or email already exists' });
-    }
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // Organization management endpoints (for organization admins)
 app.get('/api/organizations/:id/members', verifyToken, async (req, res) => {
@@ -890,6 +1242,183 @@ app.get('/api/projects/:id', verifyToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Get project error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create project
+app.post('/api/projects', verifyToken, async (req, res) => {
+  try {
+    const {
+      name, description, status = 'planning', priority, budget, start_date, end_date,
+      owner_name, address, city, state, postal_code, organization_id, category_id,
+      metadata = {}, documents = {}
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Project name is required' });
+    }
+
+    const userId = req.user.userId;
+    const userRole = req.user.role;
+
+    // Check permissions for org-admin users
+    if (userRole === 'org-admin' && organization_id) {
+      const accessResult = await pool.query(`
+        SELECT role FROM organization_users 
+        WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+      `, [userId, organization_id]);
+      
+      if (accessResult.rows.length === 0 || !['owner', 'admin'].includes(accessResult.rows[0].role)) {
+        return res.status(403).json({ error: 'Access denied. You can only create projects in organizations where you have admin access.' });
+      }
+    }
+
+    const result = await pool.query(`
+      INSERT INTO projects (
+        name, description, status, priority, budget, start_date, end_date,
+        owner_name, address, city, state, postal_code, organization_id, category_id,
+        metadata, documents, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+      RETURNING *
+    `, [
+      name, description, status, priority, budget, start_date, end_date,
+      owner_name, address, city, state, postal_code, organization_id, category_id,
+      JSON.stringify(metadata), JSON.stringify(documents)
+    ]);
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Create project error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update project
+app.put('/api/projects/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name, description, status, priority, budget, start_date, end_date,
+      owner_name, address, city, state, postal_code, organization_id, category_id,
+      metadata, documents
+    } = req.body;
+
+    // First, get the current project data for archiving
+    const currentProject = await pool.query('SELECT * FROM projects WHERE id = $1', [id]);
+    
+    if (currentProject.rows.length === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const currentData = currentProject.rows[0];
+
+    // Archive the current version
+    await pool.query(`
+      INSERT INTO project_versions (
+        project_id, version, name, description, status, priority, budget, start_date, end_date,
+        owner_name, address, city, state, postal_code, organization_id, category_id,
+        metadata, documents, created_at, updated_at, archived_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+    `, [
+      id, currentData.version || 1, currentData.name, currentData.description, currentData.status,
+      currentData.priority, currentData.budget, currentData.start_date, currentData.end_date,
+      currentData.owner_name, currentData.address, currentData.city, currentData.state,
+      currentData.postal_code, currentData.organization_id, currentData.category_id,
+      currentData.metadata, currentData.documents, currentData.created_at, currentData.updated_at
+    ]);
+
+    // Update the project with new data
+    const updateFields = [];
+    const updateValues = [];
+    let paramCount = 1;
+
+    const fieldsToUpdate = {
+      name, description, status, priority, budget, start_date, end_date,
+      owner_name, address, city, state, postal_code, organization_id, category_id
+    };
+
+    Object.entries(fieldsToUpdate).forEach(([key, value]) => {
+      if (value !== undefined) {
+        updateFields.push(`${key} = $${paramCount}`);
+        updateValues.push(value);
+        paramCount++;
+      }
+    });
+
+    // Handle metadata and documents separately
+    if (metadata !== undefined) {
+      updateFields.push(`metadata = $${paramCount}`);
+      updateValues.push(JSON.stringify(metadata));
+      paramCount++;
+    }
+
+    if (documents !== undefined) {
+      updateFields.push(`documents = $${paramCount}`);
+      updateValues.push(JSON.stringify(documents));
+      paramCount++;
+    }
+
+    // Always update version and updated_at
+    updateFields.push(`version = $${paramCount}`);
+    updateValues.push((currentData.version || 1) + 1);
+    paramCount++;
+
+    updateFields.push(`updated_at = NOW()`);
+    updateValues.push(id);
+
+    const result = await pool.query(`
+      UPDATE projects 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING *
+    `, updateValues);
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Update project error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete project
+app.delete('/api/projects/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Soft delete by setting deleted_at timestamp
+    const result = await pool.query(`
+      UPDATE projects 
+      SET deleted_at = NOW()
+      WHERE id = $1
+      RETURNING id, name
+    `, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.json({ message: 'Project deleted successfully', project: result.rows[0] });
+  } catch (error) {
+    console.error('Delete project error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get project versions (archived versions)
+app.get('/api/projects/:id/versions', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(`
+      SELECT * FROM project_versions 
+      WHERE project_id = $1 
+      ORDER BY version DESC
+    `, [id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get project versions error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

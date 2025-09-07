@@ -121,7 +121,7 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
   fetchUserOrganizations: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get('/user/organizations');
+      const response = await apiClient.get('/api/user/organizations');
       set({ userOrganizations: response as UserOrganizationMembership[], loading: false });
     } catch (error: any) {
       console.error('Error fetching user organizations:', error);

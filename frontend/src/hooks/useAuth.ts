@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from 'react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../utils/api';
-import { LoginRequest, SignupRequest, AuthResponse, User } from '../types';
+import { LoginRequest, SignupRequest, AuthResponse, User, RoleStatus, Role } from '../types';
 
 export const useLogin = () => {
   const { login } = useAuthStore();
@@ -56,6 +56,53 @@ export const useCurrentUser = () => {
     {
       enabled: isAuthenticated,
       initialData: user,
+    }
+  );
+};
+
+export const useRoleStatus = () => {
+  return useQuery<RoleStatus>(
+    ['roleStatus'],
+    async () => {
+      const response = await apiClient.get<RoleStatus>('/api/auth/role-status');
+      return response;
+    }
+  );
+};
+
+export const useSwitchRole = () => {
+  const { updateUser } = useAuthStore();
+  
+  return useMutation<any, Error, { target_role: Role; expires_in_hours?: number }>(
+    async ({ target_role, expires_in_hours }) => {
+      const response = await apiClient.post('/api/auth/switch-role', {
+        target_role,
+        expires_in_hours
+      });
+      return response;
+    },
+    {
+      onSuccess: () => {
+        // Refresh user data to get updated role
+        updateUser();
+      }
+    }
+  );
+};
+
+export const useReturnRole = () => {
+  const { updateUser } = useAuthStore();
+  
+  return useMutation<any, Error>(
+    async () => {
+      const response = await apiClient.post('/api/auth/return-role');
+      return response;
+    },
+    {
+      onSuccess: () => {
+        // Refresh user data to get updated role
+        updateUser();
+      }
     }
   );
 };

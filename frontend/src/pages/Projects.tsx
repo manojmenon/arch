@@ -28,7 +28,7 @@ const Projects: FC = () => {
   const canDelete = hasRole('localadmin');
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header Section */}
       <div className="relative overflow-hidden bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl shadow-xl">
         <div className="absolute inset-0 bg-black opacity-10"></div>

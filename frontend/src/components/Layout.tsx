@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { UserAvatar } from './UserAvatar';
+import RoleSwitcher from './RoleSwitcher';
 import { 
   Home, 
   FolderOpen, 
@@ -20,7 +21,7 @@ const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
 
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: Home },
+    { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'Projects', href: '/projects', icon: FolderOpen },
     { name: 'API Tokens', href: '/tokens', icon: Key },
   ];
@@ -30,8 +31,8 @@ const Layout = ({ children }: LayoutProps) => {
   }
 
   const isActive = (href: string) => {
-    if (href === '/') {
-      return location.pathname === '/';
+    if (href === '/dashboard') {
+      return location.pathname === '/dashboard';
     }
     return location.pathname.startsWith(href);
   };
@@ -84,6 +85,11 @@ const Layout = ({ children }: LayoutProps) => {
                 <p className="text-sm font-semibold text-gray-900 truncate">{user?.username}</p>
                 <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
               </div>
+            </div>
+            
+            {/* Role Switcher */}
+            <div className="mb-4">
+              <RoleSwitcher />
             </div>
             <div className="space-y-1">
               <Link

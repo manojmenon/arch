@@ -3,11 +3,26 @@ export interface User {
   username: string;
   email: string;
   role: Role;
+  originalRole?: Role;
   created_at: string;
   updated_at: string;
 }
 
 export type Role = 'superuser' | 'sysadmin' | 'localadmin' | 'user' | 'guest';
+
+export interface RoleInheritance {
+  inherited_role: Role;
+  inherited_at: string;
+  expires_at?: string;
+}
+
+export interface RoleStatus {
+  original_role: Role;
+  effective_role: Role;
+  is_inheriting: boolean;
+  inheritance?: RoleInheritance;
+  available_roles: Role[];
+}
 
 export interface Project {
   id: string;
@@ -23,6 +38,7 @@ export interface Project {
   end_date?: string;
   metadata?: Record<string, any>;
   documents?: Record<string, any>;
+  version?: number;
   created_at: string;
   updated_at: string;
 }

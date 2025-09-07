@@ -20,7 +20,11 @@ const Dashboard = () => {
     },
     {
       name: 'Total Budget',
-      value: `$${projects?.reduce((sum, p) => sum + (p.budget || 0), 0).toLocaleString() || 0}`,
+      value: (() => {
+        const totalBudget = projects?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
+        const millions = totalBudget / 1000000;
+        return millions >= 1 ? `$${millions.toFixed(1)}M` : `$${totalBudget.toLocaleString()}`;
+      })(),
       icon: DollarSign,
       color: 'text-emerald-600',
       bgColor: 'bg-gradient-to-br from-emerald-50 to-emerald-100',
@@ -53,7 +57,7 @@ const Dashboard = () => {
   const recentProjects = projects?.slice(0, 5) || [];
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Welcome Section */}
       <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 rounded-2xl shadow-xl">
         <div className="absolute inset-0 bg-black opacity-10"></div>
@@ -171,7 +175,11 @@ const Dashboard = () => {
                       </h3>
                       <p className="text-sm text-gray-500">
                         {project.city && project.state && `${project.city}, ${project.state}`}
-                        {project.budget && ` • $${project.budget.toLocaleString()}`}
+                        {project.budget && (() => {
+                          const millions = project.budget / 1000000;
+                          const budgetText = millions >= 1 ? `$${millions.toFixed(1)}M` : `$${project.budget.toLocaleString()}`;
+                          return ` • ${budgetText}`;
+                        })()}
                       </p>
                     </div>
                   </div>

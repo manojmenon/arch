@@ -14,6 +14,7 @@ interface AuthState {
   hasRole: (role: Role) => boolean;
   hasAnyRole: (roles: Role[]) => boolean;
   updateProfile: (userData: Partial<User>) => Promise<void>;
+  updateUser: () => Promise<void>;
   checkAuthState: () => void;
   clearAuthState: () => void;
 }
@@ -84,6 +85,20 @@ export const useAuthStore = create<AuthState>()(
           set({ user: updatedUser });
         } catch (error) {
           console.error('Profile update failed:', error);
+          throw error;
+        }
+      },
+
+      updateUser: async () => {
+        try {
+          const { sessionToken } = get();
+          if (!sessionToken) return;
+          
+          // Get updated user data with current role status
+          const updatedUser = await apiClient.get<User>('/api/user/profile');
+          set({ user: updatedUser });
+        } catch (error) {
+          console.error('User update failed:', error);
           throw error;
         }
       },

@@ -40,7 +40,7 @@ export const useUserOrganizations = () => {
   return useQuery<OrganizationMembership[]>(
     ['user', 'organizations'],
     async () => {
-      const response = await apiClient.get<OrganizationMembership[]>('/user/organizations');
+      const response = await apiClient.get<OrganizationMembership[]>('/api/user/organizations');
       return response;
     }
   );

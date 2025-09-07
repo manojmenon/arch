@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuthStore } from './store/authStore';
-import Layout from './components/Layout';
+import AppLayout from './components/AppLayout';
+import ProtectedRoute from './components/ProtectedRoute';
+import Home from './pages/Home';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
@@ -11,30 +12,62 @@ import Admin from './pages/Admin';
 import Profile from './pages/Profile';
 
 function App() {
-  const { isAuthenticated } = useAuthStore();
-
-  if (!isAuthenticated) {
-    return (
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
-
   return (
-    <Layout>
+    <AppLayout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:id" element={<ProjectDetail />} />
-        <Route path="/tokens" element={<Tokens />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/profile" element={<Profile />} />
+        {/* Public routes - accessible to everyone */}
+        <Route path="/" element={
+          <ProtectedRoute requireAuth={false} allowAuthenticated={true}>
+            <Home />
+          </ProtectedRoute>
+        } />
+        <Route path="/login" element={
+          <ProtectedRoute requireAuth={false}>
+            <Login />
+          </ProtectedRoute>
+        } />
+        <Route path="/signup" element={
+          <ProtectedRoute requireAuth={false}>
+            <Signup />
+          </ProtectedRoute>
+        } />
+        
+        {/* Protected routes - only accessible when authenticated */}
+        <Route path="/dashboard" element={
+          <ProtectedRoute requireAuth={true}>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/projects" element={
+          <ProtectedRoute requireAuth={true}>
+            <Projects />
+          </ProtectedRoute>
+        } />
+        <Route path="/projects/:id" element={
+          <ProtectedRoute requireAuth={true}>
+            <ProjectDetail />
+          </ProtectedRoute>
+        } />
+        <Route path="/tokens" element={
+          <ProtectedRoute requireAuth={true}>
+            <Tokens />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin" element={
+          <ProtectedRoute requireAuth={true}>
+            <Admin />
+          </ProtectedRoute>
+        } />
+        <Route path="/profile" element={
+          <ProtectedRoute requireAuth={true}>
+            <Profile />
+          </ProtectedRoute>
+        } />
+        
+        {/* Catch-all route */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Layout>
+    </AppLayout>
   );
 }
 

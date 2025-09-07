@@ -87,3 +87,16 @@ export const useDeleteProject = () => {
   );
 };
 
+export const useProjectVersions = (id: string) => {
+  return useQuery<any[]>(
+    ['project-versions', id],
+    async () => {
+      const response = await apiClient.get<any[]>(`/api/projects/${id}/versions`);
+      return response;
+    },
+    {
+      enabled: !!id,
+    }
+  );
+};
+

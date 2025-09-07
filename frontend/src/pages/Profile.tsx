@@ -53,7 +53,7 @@ const Profile = () => {
 
   const fetchProfile = async () => {
     try {
-      const response = await apiClient.get('/user/profile') as UserProfile;
+      const response = await apiClient.get('/api/user/profile') as UserProfile;
       setProfile(response);
       setFormData({
         username: response.username,
@@ -77,7 +77,7 @@ const Profile = () => {
     setError(null);
     
     try {
-      await apiClient.put('/user/profile', formData);
+      await apiClient.put('/api/user/profile', formData);
       await fetchProfile();
       setIsEditing(false);
     } catch (err: any) {
@@ -390,25 +390,40 @@ const Profile = () => {
       {showInviteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Invite User to Organization</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Invite User to Organization
+              {selectedOrg && (
+                <span className="block text-sm font-normal text-blue-600 mt-1">
+                  {profile.organizations.find(org => org.id === selectedOrg)?.name}
+                </span>
+              )}
+            </h3>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Organization
                 </label>
-                <select
-                  value={selectedOrg || ''}
-                  onChange={(e) => setSelectedOrg(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select an organization</option>
-                  {profile.organizations
-                    .filter(org => ['owner', 'admin'].includes(org.role))
-                    .map(org => (
-                      <option key={org.id} value={org.id}>{org.name}</option>
-                    ))}
-                </select>
+                {profile.organizations.filter(org => ['owner', 'admin'].includes(org.role)).length > 0 ? (
+                  <select
+                    value={selectedOrg || ''}
+                    onChange={(e) => setSelectedOrg(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select an organization</option>
+                    {profile.organizations
+                      .filter(org => ['owner', 'admin'].includes(org.role))
+                      .map(org => (
+                        <option key={org.id} value={org.id}>
+                          {org.name} ({org.role})
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+                    No organizations available for inviting users
+                  </div>
+                )}
               </div>
               
               <div>

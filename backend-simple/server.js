@@ -345,6 +345,18 @@ app.post('/api/auth/tokens', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Token name is required' });
     }
 
+    // Check if a token with this name already exists for this user
+    const existingToken = await pool.query(
+      'SELECT id FROM api_tokens WHERE user_id = $1 AND name = $2',
+      [userId, name]
+    );
+
+    if (existingToken.rows.length > 0) {
+      return res.status(409).json({ 
+        error: 'A token with this name already exists. Please choose a different name.' 
+      });
+    }
+
     // Generate a secure random token (limit to 60 chars to fit in 64-char column)
     const tokenValue = 'pm_' + crypto.randomBytes(28).toString('hex');
     const tokenPrefix = tokenValue.substring(0, 7) + '...'; // Limit to 10 chars for varchar(10)

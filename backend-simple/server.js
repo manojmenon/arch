@@ -577,6 +577,124 @@ app.post('/api/auth/logout', verifyToken, async (req, res) => {
   }
 });
 
+// Admin impersonation: start impersonating another user
+app.post('/api/auth/impersonate', verifyToken, async (req, res) => {
+  try {
+    const { target_user_id, target_username } = req.body || {};
+    const requester = req.user;
+
+    // Only superuser or localadmin can impersonate
+    if (!isAdmin(requester.role)) {
+      return res.status(403).json({ error: 'Only administrators can impersonate users' });
+    }
+
+    // Find the target user
+    let targetResult;
+    if (target_user_id) {
+      targetResult = await pool.query('SELECT id, username, email, role FROM users WHERE id = $1', [target_user_id]);
+    } else if (target_username) {
+      targetResult = await pool.query('SELECT id, username, email, role FROM users WHERE username = $1', [target_username]);
+    } else {
+      return res.status(400).json({ error: 'Provide target_user_id or target_username' });
+    }
+
+    if (targetResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+
+    const targetUser = targetResult.rows[0];
+
+    // Prevent impersonating administrators
+    if (['superuser', 'localadmin', 'sysadmin'].includes(targetUser.role)) {
+      return res.status(403).json({ error: 'Cannot impersonate administrator-level accounts' });
+    }
+
+    // Generate token with target user's privileges but keep original in claims
+    const targetEffectiveRole = await getEffectiveRole(targetUser.id, pool) || targetUser.role;
+    const impersonationToken = jwt.sign(
+      {
+        userId: targetUser.id,
+        username: targetUser.username,
+        role: targetEffectiveRole,
+        originalUserId: requester.userId,
+        originalUsername: requester.username,
+        originalRole: requester.role,
+        impersonating: true
+      },
+      JWT_SECRET,
+      { expiresIn: '2h' }
+    );
+
+    res.json({
+      message: `Now impersonating ${targetUser.username}`,
+      user: {
+        id: targetUser.id,
+        username: targetUser.username,
+        email: targetUser.email,
+        role: targetEffectiveRole,
+        originalRole: requester.role,
+        impersonating: true,
+        originalUser: { id: requester.userId, username: requester.username }
+      },
+      session_token: impersonationToken
+    });
+  } catch (error) {
+    console.error('Impersonate error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Stop impersonation: return to original admin identity
+app.post('/api/auth/stop-impersonation', verifyToken, async (req, res) => {
+  try {
+    const current = req.user;
+
+    if (!current.impersonating || !current.originalUserId) {
+      return res.status(400).json({ error: 'Not currently impersonating' });
+    }
+
+    // Load original user
+    const origResult = await pool.query('SELECT id, username, email, role FROM users WHERE id = $1', [current.originalUserId]);
+    if (origResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Original user not found' });
+    }
+
+    const orig = origResult.rows[0];
+    const token = jwt.sign(
+      { userId: orig.id, username: orig.username, role: orig.role, originalRole: orig.role },
+      JWT_SECRET,
+      { expiresIn: '4h' }
+    );
+
+    res.json({
+      message: 'Stopped impersonation',
+      user: { id: orig.id, username: orig.username, email: orig.email, role: orig.role, originalRole: orig.role },
+      session_token: token
+    });
+  } catch (error) {
+    console.error('Stop impersonation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get impersonation status
+app.get('/api/auth/impersonation-status', verifyToken, async (req, res) => {
+  try {
+    const u = req.user || {};
+    res.json({
+      impersonating: !!u.impersonating,
+      originalUserId: u.originalUserId || null,
+      originalUsername: u.originalUsername || null,
+      currentUserId: u.userId,
+      currentUsername: u.username,
+      role: u.role
+    });
+  } catch (error) {
+    console.error('Impersonation status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // User profile endpoints (old - removed to avoid conflict)
 
 app.put('/api/user/profile', verifyToken, async (req, res) => {

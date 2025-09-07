@@ -17,7 +17,7 @@ interface LayoutProps {
 }
 
 const Layout = ({ children }: LayoutProps) => {
-  const { user, logout, hasRole } = useAuthStore();
+  const { user, logout, hasRole, stopImpersonation } = useAuthStore();
   const location = useLocation();
 
   const navigation = [
@@ -84,6 +84,9 @@ const Layout = ({ children }: LayoutProps) => {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 truncate">{user?.username}</p>
                 <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+                { (user as any)?.impersonating && (
+                  <p className="mt-1 text-xs text-amber-600 font-medium">Impersonating</p>
+                )}
               </div>
             </div>
             
@@ -92,6 +95,15 @@ const Layout = ({ children }: LayoutProps) => {
               <RoleSwitcher />
             </div>
             <div className="space-y-1">
+              { (user as any)?.impersonating && (
+                <button
+                  onClick={stopImpersonation}
+                  className="group flex items-center w-full px-3 py-2 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-all duration-200 hover:shadow-sm"
+                >
+                  <LogOut className="mr-3 h-4 w-4 text-amber-600" />
+                  Stop impersonation
+                </button>
+              )}
               <Link
                 to="/profile"
                 className="group flex items-center w-full px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-gray-900 rounded-lg transition-all duration-200 hover:shadow-sm"

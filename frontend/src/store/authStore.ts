@@ -10,6 +10,8 @@ interface AuthState {
   isAuthenticated: boolean;
   login: (user: User, sessionToken: string) => void;
   logout: () => Promise<void>;
+  impersonate: (identifier: { id?: string; username?: string }) => Promise<void>;
+  stopImpersonation: () => Promise<void>;
   setApiToken: (token: string | null) => void;
   hasRole: (role: Role) => boolean;
   hasAnyRole: (roles: Role[]) => boolean;
@@ -60,6 +62,31 @@ export const useAuthStore = create<AuthState>()(
             apiToken: null,
             isAuthenticated: false,
           });
+        }
+      },
+
+      impersonate: async ({ id, username }) => {
+        try {
+          const response = await apiClient.post<{ user: User; session_token: string }>(
+            '/api/auth/impersonate',
+            { target_user_id: id, target_username: username }
+          );
+          set({ user: response.user, sessionToken: response.session_token, isAuthenticated: true });
+        } catch (error) {
+          console.error('Impersonation failed:', error);
+          throw error;
+        }
+      },
+
+      stopImpersonation: async () => {
+        try {
+          const response = await apiClient.post<{ user: User; session_token: string }>(
+            '/api/auth/stop-impersonation'
+          );
+          set({ user: response.user, sessionToken: response.session_token, isAuthenticated: true });
+        } catch (error) {
+          console.error('Stop impersonation failed:', error);
+          throw error;
         }
       },
 

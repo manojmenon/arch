@@ -67,6 +67,7 @@ const Login = () => {
               <input
                 {...register('username', { required: 'Username is required' })}
                 type="text"
+                id="username"
                 className="input mt-1"
                 placeholder="Enter your username"
               />
@@ -83,6 +84,7 @@ const Login = () => {
                 <input
                   {...register('password', { required: 'Password is required' })}
                   type={showPassword ? 'text' : 'password'}
+                  id="password"
                   className="input pr-10"
                   placeholder="Enter your password"
                 />

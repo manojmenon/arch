@@ -60,6 +60,7 @@ const Signup = () => {
                   minLength: { value: 3, message: 'Username must be at least 3 characters' }
                 })}
                 type="text"
+                id="username"
                 className="input mt-1"
                 placeholder="Choose a username"
               />
@@ -81,6 +82,7 @@ const Signup = () => {
                   }
                 })}
                 type="email"
+                id="email"
                 className="input mt-1"
                 placeholder="Enter your email"
               />
@@ -100,6 +102,7 @@ const Signup = () => {
                     minLength: { value: 8, message: 'Password must be at least 8 characters' }
                   })}
                   type={showPassword ? 'text' : 'password'}
+                  id="password"
                   className="input pr-10"
                   placeholder="Create a password"
                 />
@@ -130,6 +133,7 @@ const Signup = () => {
                   validate: value => value === password || 'Passwords do not match'
                 })}
                 type="password"
+                id="confirmPassword"
                 className="input mt-1"
                 placeholder="Confirm your password"
               />

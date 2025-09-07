@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { Users, Shield, Settings, Activity, Search, Plus, Edit, Trash2, Eye } from 'lucide-react';
+import { Users, Shield, Settings, Activity, Search, Plus, Edit, Trash2, Eye, UserPlus } from 'lucide-react';
 
 const Admin = () => {
   const { user: _user } = useAuthStore();
@@ -78,6 +78,7 @@ const Admin = () => {
 };
 
 const UsersTab = () => {
+  const { impersonate } = useAuthStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [users] = useState([
     {
@@ -164,10 +165,12 @@ const UsersTab = () => {
           <h2 className="text-xl font-semibold text-gray-900">User Management</h2>
           <p className="text-gray-600 mt-1">Manage system users and their permissions</p>
         </div>
-        <button className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium">
-          <Plus className="h-4 w-4 mr-2" />
-          Add User
-        </button>
+        <div className="flex items-center space-x-2">
+          <button className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium">
+            <Plus className="h-4 w-4 mr-2" />
+            Add User
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -248,6 +251,18 @@ const UsersTab = () => {
                     <button className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-800 hover:bg-gray-200 transition-colors">
                       <Edit className="h-3 w-3 mr-1" />
                       Edit
+                    </button>
+                    <button onClick={() => {
+                      impersonate({ username: user.username }).then(() => {
+                        const token = useAuthStore.getState().sessionToken as string | null;
+                        if (token) {
+                          const targetUrl = `${window.location.origin}/dashboard?session_token=${encodeURIComponent(token)}`;
+                          window.open(targetUrl, '_blank');
+                        }
+                      }).catch(() => {});
+                    }} className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors">
+                      <UserPlus className="h-3 w-3 mr-1" />
+                      Impersonate
                     </button>
                     <button className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 transition-colors">
                       <Trash2 className="h-3 w-3 mr-1" />

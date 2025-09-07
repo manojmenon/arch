@@ -1,20 +1,24 @@
 import React, { useEffect } from 'react';
 import { useOrganizationStore } from '../store/organizationStore';
-import { Building2 } from 'lucide-react';
+import { Building2, Users, Crown, Shield, UserCheck, User } from 'lucide-react';
 
 export const OrganizationSelector: React.FC = () => {
   const {
     organizations,
+    userOrganizations,
     selectedOrganization,
     loading,
     error,
     fetchOrganizations,
+    fetchUserOrganizations,
     selectOrganization,
+    switchToUserOrganization,
   } = useOrganizationStore();
 
   useEffect(() => {
     fetchOrganizations();
-  }, [fetchOrganizations]);
+    fetchUserOrganizations();
+  }, [fetchOrganizations, fetchUserOrganizations]);
 
   if (loading) {
     return (
@@ -40,7 +44,7 @@ export const OrganizationSelector: React.FC = () => {
         <h3 className="text-lg font-semibold text-gray-900">Organization</h3>
       </div>
       
-      <div className="space-y-2">
+      <div className="space-y-4">
         {/* All Organizations Option */}
         <button
           onClick={() => selectOrganization(null)}
@@ -61,33 +65,97 @@ export const OrganizationSelector: React.FC = () => {
           </div>
         </button>
 
-        {/* Organization List */}
-        {organizations.map((org) => (
-          <button
-            key={org.id}
-            onClick={() => selectOrganization(org)}
-            className={`w-full text-left p-3 rounded-lg border transition-colors ${
-              selectedOrganization?.id === org.id
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                <Building2 className="h-4 w-4 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <div className="font-medium">{org.name}</div>
-                <div className="text-sm text-gray-500">
-                  {org.type} • {org.project_count || 0} projects
-                </div>
-                {org.city && (
-                  <div className="text-xs text-gray-400">{org.city}, {org.state}</div>
-                )}
-              </div>
+        {/* My Organizations Section */}
+        {userOrganizations.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="h-4 w-4 text-green-600" />
+              <h4 className="text-sm font-semibold text-gray-700">My Organizations</h4>
             </div>
-          </button>
-        ))}
+            <div className="space-y-2">
+              {userOrganizations.map((org) => (
+                <button
+                  key={org.id}
+                  onClick={() => switchToUserOrganization(org.id)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedOrganization?.id === org.id
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                      <Building2 className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{org.name}</div>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                          (org as any).role === 'owner' ? 'bg-purple-100 text-purple-800' :
+                          (org as any).role === 'admin' ? 'bg-red-100 text-red-800' :
+                          (org as any).role === 'manager' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {(org as any).role === 'owner' && <Crown className="h-3 w-3 mr-1" />}
+                          {(org as any).role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
+                          {(org as any).role === 'manager' && <UserCheck className="h-3 w-3 mr-1" />}
+                          {(org as any).role === 'viewer' && <User className="h-3 w-3 mr-1" />}
+                          {(org as any).role}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {org.type} • {org.project_count || 0} projects
+                      </div>
+                      {org.city && (
+                        <div className="text-xs text-gray-400">{org.city}, {org.state}</div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* All Organizations Section */}
+        {organizations.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Building2 className="h-4 w-4 text-blue-600" />
+              <h4 className="text-sm font-semibold text-gray-700">All Organizations</h4>
+            </div>
+            <div className="space-y-2">
+              {organizations
+                .filter(org => !userOrganizations.some(userOrg => userOrg.id === org.id))
+                .map((org) => (
+                <button
+                  key={org.id}
+                  onClick={() => selectOrganization(org)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedOrganization?.id === org.id
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                      <Building2 className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">{org.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {org.type} • {org.project_count || 0} projects
+                      </div>
+                      {org.city && (
+                        <div className="text-xs text-gray-400">{org.city}, {org.state}</div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {organizations.length === 0 && (

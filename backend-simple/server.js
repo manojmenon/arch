@@ -200,42 +200,7 @@ app.post('/api/auth/logout', verifyToken, async (req, res) => {
   }
 });
 
-// User profile endpoints
-app.get('/api/user/profile', verifyToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, username, email, role, created_at, updated_at FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const user = result.rows[0];
-    
-    // Generate avatar initials
-    let avatarInitials = '';
-    if (user.username) {
-      const nameParts = user.username.split(' ');
-      if (nameParts.length >= 2) {
-        avatarInitials = (nameParts[0][0] + nameParts[1][0]).toUpperCase();
-      } else {
-        avatarInitials = user.username.substring(0, 2).toUpperCase();
-      }
-    } else if (user.email) {
-      avatarInitials = user.email.substring(0, 2).toUpperCase();
-    }
-
-    res.json({
-      ...user,
-      avatarInitials
-    });
-  } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// User profile endpoints (old - removed to avoid conflict)
 
 app.put('/api/user/profile', verifyToken, async (req, res) => {
   try {
@@ -604,6 +569,296 @@ app.get('/api/tags', verifyToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching tags:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// User organization memberships endpoints
+app.get('/api/user/organizations', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await pool.query(`
+      SELECT 
+        o.id,
+        o.name,
+        o.description,
+        o.type,
+        o.city,
+        o.state,
+        o.country,
+        ou.role,
+        ou.permissions,
+        ou.created_at as joined_at,
+        COUNT(DISTINCT p.id) as project_count,
+        COUNT(DISTINCT ou2.user_id) as member_count
+      FROM organization_users ou
+      JOIN organizations o ON ou.organization_id = o.id
+      LEFT JOIN projects p ON o.id = p.organization_id AND p.deleted_at IS NULL
+      LEFT JOIN organization_users ou2 ON o.id = ou2.organization_id AND ou2.deleted_at IS NULL
+      WHERE ou.user_id = $1 AND ou.deleted_at IS NULL AND o.deleted_at IS NULL
+      GROUP BY o.id, o.name, o.description, o.type, o.city, o.state, o.country, ou.role, ou.permissions, ou.created_at
+      ORDER BY ou.created_at DESC
+    `, [userId]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching user organizations:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get user profile with organization memberships
+app.get('/api/user/profile', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    // Get user details
+    const userResult = await pool.query(`
+      SELECT id, username, email, role, created_at, updated_at
+      FROM users 
+      WHERE id = $1
+    `, [userId]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Get organization memberships
+    const orgResult = await pool.query(`
+      SELECT 
+        o.id,
+        o.name,
+        o.description,
+        o.type,
+        o.city,
+        o.state,
+        o.country,
+        ou.role as organization_role,
+        ou.permissions,
+        ou.created_at as joined_at,
+        COUNT(DISTINCT p.id) as project_count
+      FROM organization_users ou
+      JOIN organizations o ON ou.organization_id = o.id
+      LEFT JOIN projects p ON o.id = p.organization_id AND p.deleted_at IS NULL
+      WHERE ou.user_id = $1 AND ou.deleted_at IS NULL AND o.deleted_at IS NULL
+      GROUP BY o.id, o.name, o.description, o.type, o.city, o.state, o.country, ou.role, ou.permissions, ou.created_at
+      ORDER BY ou.created_at DESC
+    `, [userId]);
+    
+    user.organizations = orgResult.rows;
+    
+    res.json(user);
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user profile
+app.put('/api/user/profile', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { username, email } = req.body;
+    
+    const result = await pool.query(`
+      UPDATE users 
+      SET username = $1, email = $2, updated_at = now()
+      WHERE id = $3
+      RETURNING id, username, email, role, created_at, updated_at
+    `, [username, email, userId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    if (error.code === '23505') { // Unique constraint violation
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Organization management endpoints (for organization admins)
+app.get('/api/organizations/:id/members', verifyToken, async (req, res) => {
+  try {
+    const { id: organizationId } = req.params;
+    const userId = req.user.userId;
+    
+    // Check if user has admin access to this organization
+    const accessResult = await pool.query(`
+      SELECT role FROM organization_users 
+      WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+    `, [userId, organizationId]);
+    
+    if (accessResult.rows.length === 0 || !['owner', 'admin'].includes(accessResult.rows[0].role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.role as system_role,
+        ou.role as organization_role,
+        ou.permissions,
+        ou.created_at as joined_at,
+        ou.updated_at
+      FROM organization_users ou
+      JOIN users u ON ou.user_id = u.id
+      WHERE ou.organization_id = $1 AND ou.deleted_at IS NULL
+      ORDER BY ou.created_at DESC
+    `, [organizationId]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching organization members:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Invite user to organization
+app.post('/api/organizations/:id/invite', verifyToken, async (req, res) => {
+  try {
+    const { id: organizationId } = req.params;
+    const { email, role = 'member' } = req.body;
+    const userId = req.user.userId;
+    
+    // Check if user has admin access to this organization
+    const accessResult = await pool.query(`
+      SELECT role FROM organization_users 
+      WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+    `, [userId, organizationId]);
+    
+    if (accessResult.rows.length === 0 || !['owner', 'admin'].includes(accessResult.rows[0].role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Find user by email
+    const userResult = await pool.query(`
+      SELECT id FROM users WHERE email = $1
+    `, [email]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const invitedUserId = userResult.rows[0].id;
+    
+    // Check if user is already a member
+    const existingResult = await pool.query(`
+      SELECT id FROM organization_users 
+      WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+    `, [invitedUserId, organizationId]);
+    
+    if (existingResult.rows.length > 0) {
+      return res.status(400).json({ error: 'User is already a member of this organization' });
+    }
+    
+    // Add user to organization
+    const result = await pool.query(`
+      INSERT INTO organization_users (user_id, organization_id, role, created_at, updated_at)
+      VALUES ($1, $2, $3, now(), now())
+      RETURNING id, role, created_at
+    `, [invitedUserId, organizationId, role]);
+    
+    res.json({
+      message: 'User added to organization successfully',
+      membership: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error inviting user to organization:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user role in organization
+app.put('/api/organizations/:id/members/:userId/role', verifyToken, async (req, res) => {
+  try {
+    const { id: organizationId, userId: targetUserId } = req.params;
+    const { role } = req.body;
+    const currentUserId = req.user.userId;
+    
+    // Check if current user has admin access to this organization
+    const accessResult = await pool.query(`
+      SELECT role FROM organization_users 
+      WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+    `, [currentUserId, organizationId]);
+    
+    if (accessResult.rows.length === 0 || !['owner', 'admin'].includes(accessResult.rows[0].role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Update user role
+    const result = await pool.query(`
+      UPDATE organization_users 
+      SET role = $1, updated_at = now()
+      WHERE user_id = $2 AND organization_id = $3 AND deleted_at IS NULL
+      RETURNING id, role, updated_at
+    `, [role, targetUserId, organizationId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Membership not found' });
+    }
+    
+    res.json({
+      message: 'User role updated successfully',
+      membership: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Remove user from organization
+app.delete('/api/organizations/:id/members/:userId', verifyToken, async (req, res) => {
+  try {
+    const { id: organizationId, userId: targetUserId } = req.params;
+    const currentUserId = req.user.userId;
+    
+    // Check if current user has admin access to this organization
+    const accessResult = await pool.query(`
+      SELECT role FROM organization_users 
+      WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+    `, [currentUserId, organizationId]);
+    
+    if (accessResult.rows.length === 0 || !['owner', 'admin'].includes(accessResult.rows[0].role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Prevent removing the last owner
+    if (targetUserId === currentUserId) {
+      const ownerCountResult = await pool.query(`
+        SELECT COUNT(*) as count FROM organization_users 
+        WHERE organization_id = $1 AND role = 'owner' AND deleted_at IS NULL
+      `, [organizationId]);
+      
+      if (ownerCountResult.rows[0].count <= 1) {
+        return res.status(400).json({ error: 'Cannot remove the last owner from the organization' });
+      }
+    }
+    
+    // Soft delete the membership
+    const result = await pool.query(`
+      UPDATE organization_users 
+      SET deleted_at = now(), updated_at = now()
+      WHERE user_id = $1 AND organization_id = $2 AND deleted_at IS NULL
+      RETURNING id
+    `, [targetUserId, organizationId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Membership not found' });
+    }
+    
+    res.json({ message: 'User removed from organization successfully' });
+  } catch (error) {
+    console.error('Error removing user from organization:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

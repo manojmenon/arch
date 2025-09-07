@@ -58,6 +58,7 @@ export interface ProjectFilters {
 interface OrganizationState {
   organizations: Organization[];
   selectedOrganization: Organization | null;
+  userOrganizations: Organization[];
   categories: ProjectCategory[];
   tags: ProjectTag[];
   filters: ProjectFilters;
@@ -66,7 +67,9 @@ interface OrganizationState {
   
   // Actions
   fetchOrganizations: (search?: string, type?: string) => Promise<void>;
+  fetchUserOrganizations: () => Promise<void>;
   selectOrganization: (organization: Organization | null) => void;
+  switchToUserOrganization: (organizationId: string) => void;
   fetchCategories: (organizationId?: string) => Promise<void>;
   fetchTags: (organizationId?: string) => Promise<void>;
   updateFilters: (filters: Partial<ProjectFilters>) => void;
@@ -83,6 +86,7 @@ const defaultFilters: ProjectFilters = {
 export const useOrganizationStore = create<OrganizationState>((set, get) => ({
   organizations: [],
   selectedOrganization: null,
+  userOrganizations: [],
   categories: [],
   tags: [],
   filters: defaultFilters,
@@ -107,6 +111,20 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
     }
   },
 
+  fetchUserOrganizations: async () => {
+    set({ loading: true, error: null });
+    try {
+      const response = await apiClient.get('/user/organizations');
+      set({ userOrganizations: response as Organization[], loading: false });
+    } catch (error: any) {
+      console.error('Error fetching user organizations:', error);
+      set({ 
+        error: error.response?.data?.error || 'Failed to fetch user organizations',
+        loading: false 
+      });
+    }
+  },
+
   selectOrganization: (organization: Organization | null) => {
     set({ selectedOrganization: organization });
     // Update filters to include the selected organization
@@ -125,6 +143,14 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
       get().fetchTags(organization.id);
     } else {
       set({ categories: [], tags: [] });
+    }
+  },
+
+  switchToUserOrganization: (organizationId: string) => {
+    const userOrgs = get().userOrganizations;
+    const organization = userOrgs.find(org => org.id === organizationId);
+    if (organization) {
+      get().selectOrganization(organization);
     }
   },
 

@@ -91,16 +91,16 @@ export const OrganizationSelector: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <div className="font-medium">{org.name}</div>
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                          (org as any).role === 'owner' ? 'bg-purple-100 text-purple-800' :
-                          (org as any).role === 'admin' ? 'bg-red-100 text-red-800' :
-                          (org as any).role === 'manager' ? 'bg-blue-100 text-blue-800' :
+                          org.role === 'owner' ? 'bg-purple-100 text-purple-800' :
+                          org.role === 'admin' ? 'bg-red-100 text-red-800' :
+                          org.role === 'manager' ? 'bg-blue-100 text-blue-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
-                          {(org as any).role === 'owner' && <Crown className="h-3 w-3 mr-1" />}
-                          {(org as any).role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
-                          {(org as any).role === 'manager' && <UserCheck className="h-3 w-3 mr-1" />}
-                          {(org as any).role === 'viewer' && <User className="h-3 w-3 mr-1" />}
-                          {(org as any).role}
+                          {org.role === 'owner' && <Crown className="h-3 w-3 mr-1" />}
+                          {org.role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
+                          {org.role === 'manager' && <UserCheck className="h-3 w-3 mr-1" />}
+                          {org.role === 'viewer' && <User className="h-3 w-3 mr-1" />}
+                          {org.role}
                         </span>
                       </div>
                       <div className="text-sm text-gray-500">

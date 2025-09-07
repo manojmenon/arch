@@ -23,6 +23,13 @@ export interface Organization {
   updated_at: string;
 }
 
+export interface UserOrganizationMembership extends Organization {
+  role: string;
+  permissions?: any;
+  joined_at: string;
+  member_count?: number;
+}
+
 export interface ProjectCategory {
   id: string;
   organization_id: string;
@@ -58,7 +65,7 @@ export interface ProjectFilters {
 interface OrganizationState {
   organizations: Organization[];
   selectedOrganization: Organization | null;
-  userOrganizations: Organization[];
+  userOrganizations: UserOrganizationMembership[];
   categories: ProjectCategory[];
   tags: ProjectTag[];
   filters: ProjectFilters;
@@ -115,7 +122,7 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await apiClient.get('/user/organizations');
-      set({ userOrganizations: response as Organization[], loading: false });
+      set({ userOrganizations: response as UserOrganizationMembership[], loading: false });
     } catch (error: any) {
       console.error('Error fetching user organizations:', error);
       set({ 
@@ -150,7 +157,29 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
     const userOrgs = get().userOrganizations;
     const organization = userOrgs.find(org => org.id === organizationId);
     if (organization) {
-      get().selectOrganization(organization);
+      // Convert UserOrganizationMembership to Organization for selection
+      const orgForSelection: Organization = {
+        id: organization.id,
+        name: organization.name,
+        description: organization.description,
+        type: organization.type,
+        address: organization.address,
+        city: organization.city,
+        state: organization.state,
+        postal_code: organization.postal_code,
+        country: organization.country,
+        phone: organization.phone,
+        email: organization.email,
+        website: organization.website,
+        tax_id: organization.tax_id,
+        registration_number: organization.registration_number,
+        metadata: organization.metadata,
+        project_count: organization.project_count,
+        user_count: organization.user_count,
+        created_at: organization.created_at,
+        updated_at: organization.updated_at,
+      };
+      get().selectOrganization(orgForSelection);
     }
   },
 
